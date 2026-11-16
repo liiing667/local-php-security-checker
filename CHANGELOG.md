@@ -1,6 +1,9 @@
 # 2.1.0 (TBD)
 
  * Move to Go 1.22
+ * Normalize analysis results once so JSON, JUnit and the exit code always share the same deduplicated advisory set
+ * Make JUnit report one testcase per advisory, with tests/failures matching the advisory count
+ * Fail with exit code 127 instead of silently ignoring formatter errors (including the GitHub `raw_json` output)
 
 # 2.0.0 (2022-04-09)
 

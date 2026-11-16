@@ -133,7 +133,43 @@ func Analyze(lock *Lock, db *AdvisoryDB, noDevPackages bool) *Vulnerabilities {
 		}
 	}
 
-	return &vulnerabilities
+	return Normalize(&vulnerabilities)
+}
+
+// Normalize removes duplicate advisories for every vulnerable package and
+// sorts them deterministically. All output formats as well as the exit code
+// must be computed from the normalized result so that they always describe
+// the same set of vulnerabilities.
+func Normalize(vulns *Vulnerabilities) *Vulnerabilities {
+	if vulns == nil {
+		return &Vulnerabilities{}
+	}
+
+	normalized := make(Vulnerabilities, len(*vulns))
+	for pkg, vulnerability := range *vulns {
+		seen := make(map[SimpleAdvisory]bool, len(vulnerability.Advisories))
+		advisories := make([]SimpleAdvisory, 0, len(vulnerability.Advisories))
+		for _, advisory := range vulnerability.Advisories {
+			if seen[advisory] {
+				continue
+			}
+			seen[advisory] = true
+			advisories = append(advisories, advisory)
+		}
+		sort.SliceStable(advisories, func(i, j int) bool {
+			if advisories[i].CVE != advisories[j].CVE {
+				return advisories[i].CVE < advisories[j].CVE
+			}
+			if advisories[i].Title != advisories[j].Title {
+				return advisories[i].Title < advisories[j].Title
+			}
+			return advisories[i].Link < advisories[j].Link
+		})
+		vulnerability.Advisories = advisories
+		normalized[pkg] = vulnerability
+	}
+
+	return &normalized
 }
 
 func normalizeVersion(version string) string {

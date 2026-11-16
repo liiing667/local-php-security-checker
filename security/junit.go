@@ -28,21 +28,30 @@ type testcase struct {
 }
 
 func ToJunit(vulns *Vulnerabilities) ([]byte, error) {
+	vulns = Normalize(vulns)
+
 	var packages []testsuite
 	var cases []testcase
 	ts := testsuite{}
 	for _, pkg := range vulns.Keys() {
 		v := vulns.Get(pkg)
-		tc := testcase{
-			Classname: "packages",
-			Name:      fmt.Sprintf("%s (%s)", pkg, v.Version),
-		}
 		for _, a := range v.Advisories {
-			tc.Failure = append(tc.Failure, fmt.Sprintf("%s - %s (%s)", a.CVE, a.Title, a.Link))
+			advisoryID := a.CVE
+			if advisoryID == "" {
+				advisoryID = a.Title
+			}
+			if advisoryID == "" {
+				advisoryID = a.Link
+			}
+			tc := testcase{
+				Classname: "packages",
+				Name:      fmt.Sprintf("%s (%s): %s", pkg, v.Version, advisoryID),
+				Failure:   []string{fmt.Sprintf("%s - %s (%s)", a.CVE, a.Title, a.Link)},
+			}
+			cases = append(cases, tc)
+			ts.Failures++
+			ts.Tests++
 		}
-		cases = append(cases, tc)
-		ts.Failures++
-		ts.Tests++
 	}
 	ts.Testcases = cases
 	packages = append(packages, ts)

@@ -21,6 +21,13 @@ var (
 	date    = "unknown"
 )
 
+const (
+	exitOK                   = 0
+	exitVulnerabilitiesFound = 1
+	exitInvalidFlag          = 2
+	exitFailure              = 127
+)
+
 func main() {
 	format := flag.String("format", "ansi", "Output format (ansi, text, junit, markdown, json, or yaml)")
 	path := flag.String("path", "", "composer.lock file or directory")
@@ -37,18 +44,18 @@ func main() {
 	if *help {
 		fmt.Printf("Local PHP Security Checker %s, built at %s\n\n", version, date)
 		flag.Usage()
-		os.Exit(0)
+		os.Exit(exitOK)
 	}
 
 	if *versionFlag {
 		fmt.Printf("Local PHP Security Checker %s, built at %s\n", version, date)
-		os.Exit(0)
+		os.Exit(exitOK)
 	}
 
 	db, err := security.NewDB(*local, *advisoryArchiveURL, *cacheDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to load the advisory DB: %s\n", err)
-		os.Exit(127)
+		os.Exit(exitFailure)
 	}
 
 	if *updateCacheOnly {
@@ -57,27 +64,28 @@ func main() {
 
 	if *format != "" && *format != "markdown" && *format != "json" && *format != "text" && *format != "yaml" && *format != "ansi" && *format != "junit" {
 		fmt.Fprintf(os.Stderr, "format \"%s\" is not supported (supported formats: markdown, ansi, json, junit, and yaml)\n", *format)
-		os.Exit(2)
+		os.Exit(exitInvalidFlag)
 	}
 
 	lockReader, err := security.LocateLock(*path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(127)
+		os.Exit(exitFailure)
 	}
 
 	lock, err := security.NewLock(lockReader)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to load the lock file: %s\n", err)
-		os.Exit(127)
+		os.Exit(exitFailure)
 	}
 
-	vulns := security.Analyze(lock, db, *noDevPackages)
+	// all formatters and the exit code must consume the same normalized result
+	vulns := security.Normalize(security.Analyze(lock, db, *noDevPackages))
 
 	output, err := security.Format(vulns, *format)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to output the results: %s\n", err)
-		os.Exit(127)
+		os.Exit(exitFailure)
 	}
 	fmt.Print(string(output))
 
@@ -87,20 +95,23 @@ func main() {
 		f, err := os.OpenFile(gOutFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "unable to open github output: %s\n", err)
-			os.Exit(127)
+			os.Exit(exitFailure)
 		}
 		defer f.Close()
 
 		// inside a Github action, export vulns
-		if output, err := security.Format(vulns, "raw_json"); err == nil {
-			if _, err = f.WriteString("vulns=" + string(output) + "\n"); err != nil {
-				fmt.Fprintf(os.Stderr, "unable to write into github output: %s\n", err)
-				os.Exit(127)
-			}
+		rawOutput, err := security.Format(vulns, "raw_json")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to output the results: %s\n", err)
+			os.Exit(exitFailure)
+		}
+		if _, err = f.WriteString("vulns=" + string(rawOutput) + "\n"); err != nil {
+			fmt.Fprintf(os.Stderr, "unable to write into github output: %s\n", err)
+			os.Exit(exitFailure)
 		}
 	}
 
 	if vulns.Count() > 0 && !*disableExitCode {
-		os.Exit(1)
+		os.Exit(exitVulnerabilitiesFound)
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 // Format formats the vulnerabilities in the given format
 func Format(vulns *Vulnerabilities, format string) ([]byte, error) {
+	vulns = Normalize(vulns)
 	if format == "ansi" {
 		return ToANSI(vulns, false), nil
 	} else if format == "text" || format == "txt" || format == "markdown" || format == "md" {
@@ -30,6 +31,7 @@ func Format(vulns *Vulnerabilities, format string) ([]byte, error) {
 
 // ToANSI returns vulnerabilities as text with ANSI code for colors
 func ToANSI(vulns *Vulnerabilities, forceANSICodes bool) []byte {
+	vulns = Normalize(vulns)
 	if !hasPosixColorSupport() && !forceANSICodes {
 		return ToMarkdown(vulns)
 	}
@@ -86,6 +88,7 @@ func ToMarkdown(vulns *Vulnerabilities) []byte {
 
 // ToJSON outputs vulnerabilities as JSON
 func ToJSON(vulns *Vulnerabilities, prettify bool) ([]byte, error) {
+	vulns = Normalize(vulns)
 	if prettify {
 		return json.MarshalIndent(vulns, "", "    ")
 	}
@@ -95,6 +98,7 @@ func ToJSON(vulns *Vulnerabilities, prettify bool) ([]byte, error) {
 
 // ToYAML outputs vulnerabilities as YAML
 func ToYAML(vulns *Vulnerabilities) ([]byte, error) {
+	vulns = Normalize(vulns)
 	return yaml.Marshal(vulns)
 }
 
