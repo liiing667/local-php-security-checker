@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -21,7 +20,7 @@ const AdvisoryArchiveURL = "https://codeload.github.com/FriendsOfPHP/security-ad
 // AdvisoryDB stores all known security advisories
 type AdvisoryDB struct {
 	Advisories  []Advisory
-	cacheDir    string
+	cachePath   string
 	noHTTPCalls bool
 }
 
@@ -49,7 +48,11 @@ type Cache struct {
 
 // NewDB fetches the advisory DB from Github
 func NewDB(noHTTPCalls bool, advisoryArchiveURL, cacheDir string) (*AdvisoryDB, error) {
-	db := &AdvisoryDB{noHTTPCalls: noHTTPCalls, cacheDir: cacheDir}
+	cachePath, err := resolveCachePath(cacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use the advisory cache: %s", err)
+	}
+	db := &AdvisoryDB{noHTTPCalls: noHTTPCalls, cachePath: cachePath}
 	if err := db.load(advisoryArchiveURL); err != nil {
 		return nil, fmt.Errorf("unable to fetch advisories: %s", err)
 	}
@@ -68,8 +71,7 @@ func (db *AdvisoryDB) load(advisoryArchiveURL string) error {
 	db.Advisories = []Advisory{}
 
 	var cache *Cache
-	cachePath := filepath.Join(db.cacheDir, "php_sec_db.json")
-	if cacheContent, err := os.ReadFile(cachePath); err == nil {
+	if cacheContent, err := os.ReadFile(db.cachePath); err == nil {
 		// ignore errors
 		json.Unmarshal(cacheContent, &cache)
 	}
@@ -105,7 +107,9 @@ func (db *AdvisoryDB) load(advisoryArchiveURL string) error {
 			}
 			cacheContent, err := json.Marshal(cache)
 			if err == nil {
-				os.WriteFile(cachePath, cacheContent, 0644)
+				if err := db.writeCache(cacheContent); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -140,4 +144,19 @@ func (db *AdvisoryDB) load(advisoryArchiveURL string) error {
 	}
 
 	return nil
+}
+
+// writeCache stores the advisory archive while making sure the cache file
+// cannot be redirected outside of the verified cache directory through a
+// symbolic link.
+func (db *AdvisoryDB) writeCache(contents []byte) error {
+	if info, err := os.Lstat(db.cachePath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("advisory cache %s is a symbolic link", db.cachePath)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("advisory cache %s is not a regular file", db.cachePath)
+		}
+	}
+	return os.WriteFile(db.cachePath, contents, 0644)
 }
